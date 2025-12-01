@@ -1,0 +1,55 @@
+# Deploy ASB platform onto ECS via SSH.
+# Required secrets: ECS_HOST, ECS_USER, ECS_SSH_KEY, ECS_DEPLOY_PATH (path to repo on ECS).
+# Trigger manually via GitHub UI: Actions -> Deploy ASB Platform to ECS -> Run workflow.
+name: Deploy ASB Platform to ECS
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_branch:
+        description: "Git branch to deploy on ECS"
+        required: false
+        default: "main"
+  repository_dispatch:
+    types: [trigger-ecs-deploy]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-to-ecs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout infra repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.deploy_branch || 'main' }}
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            DEPLOY_PATH="${{ secrets.ECS_DEPLOY_PATH }}"
+            BRANCH="${{ github.event.inputs.deploy_branch || 'main' }}"
+
+            echo "[deploy] Using deploy path: ${DEPLOY_PATH}"
+            cd "${DEPLOY_PATH}"
+
+            echo "[deploy] Fetching latest code..."
+            git fetch origin "${BRANCH}"
+            git checkout "${BRANCH}"
+            git pull origin "${BRANCH}"
+
+            echo "[deploy] Ensuring deploy script is executable..."
+            chmod +x scripts/deploy.sh
+
+            echo "[deploy] Running deployment script..."
+            scripts/deploy.sh
+
+            echo "[deploy] Deployment completed."
+
