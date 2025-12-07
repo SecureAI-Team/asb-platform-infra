@@ -46,21 +46,44 @@ jobs:
             MAX_RETRIES=3
             RETRY_SLEEP=5
 
-            echo "[deploy] Ensuring repository exists at ${DEPLOY_PATH}"
-            if [[ ! -d "${DEPLOY_PATH}/.git" ]]; then
-              echo "[deploy] Repository missing; cloning ${REPO_URL}..."
-              mkdir -p "$(dirname "${DEPLOY_PATH}")"
-              attempt=1
-              until git clone "${REPO_URL}" "${DEPLOY_PATH}"; do
-                if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
-                  echo "[deploy] Failed to clone repository after ${MAX_RETRIES} attempts."
-                  exit 1
-                fi
-                attempt=$((attempt + 1))
-                echo "[deploy] Clone failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
-                sleep "${RETRY_SLEEP}"
-              done
+            echo "[deploy] Validating ECS runtime requirements..."
+            REQUIRED_CMDS=(git docker base64)
+            for cmd in "${REQUIRED_CMDS[@]}"; do
+              if ! command -v "${cmd}" >/dev/null 2>&1; then
+                echo "[deploy] Missing required command '${cmd}'."
+                exit 1
+              fi
+            done
+            if ! docker info >/dev/null 2>&1; then
+              echo "[deploy] Docker daemon is not running or unreachable."
+              exit 1
             fi
+            if ! docker compose version >/dev/null 2>&1; then
+              echo "[deploy] Docker Compose plugin is not available."
+              exit 1
+            fi
+            if [[ -z "${ECS_ENV_FILE_B64:-}" ]]; then
+              echo "[deploy] ECS_ENV_FILE_B64 secret is required for unattended deployments."
+              exit 1
+            fi
+            echo "[deploy] ECS prerequisites OK."
+
+            echo "[deploy] Ensuring repository exists at ${DEPLOY_PATH}"
+            if [[ -d "${DEPLOY_PATH}" ]]; then
+              echo "[deploy] Removing existing contents at ${DEPLOY_PATH}..."
+              rm -rf "${DEPLOY_PATH}"
+            fi
+            mkdir -p "$(dirname "${DEPLOY_PATH}")"
+            attempt=1
+            until git clone "${REPO_URL}" "${DEPLOY_PATH}"; do
+              if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
+                echo "[deploy] Failed to clone repository after ${MAX_RETRIES} attempts."
+                exit 1
+              fi
+              attempt=$((attempt + 1))
+              echo "[deploy] Clone failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
+              sleep "${RETRY_SLEEP}"
+            done
 
             echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
@@ -91,13 +114,10 @@ jobs:
             echo "[deploy] Ensuring deploy script is executable..."
             chmod +x scripts/deploy.sh
 
-            if [[ -n "${ECS_ENV_FILE_B64:-}" ]]; then
-              echo "[deploy] Writing env/ecs.env from secret..."
-              mkdir -p env
-              echo "${ECS_ENV_FILE_B64}" | base64 -d > env/ecs.env
-            else
-              echo "[deploy] Warning: ECS_ENV_FILE_B64 not set; assuming env/ecs.env already exists."
-            fi
+            echo "[deploy] Writing env/ecs.env from secret..."
+            mkdir -p env
+            echo "${ECS_ENV_FILE_B64}" | base64 -d > env/ecs.env
+            chmod 600 env/ecs.env
 
             echo "[deploy] Running deployment..."
             ACR_REGISTRY="${ACR_REGISTRY:-}" \
