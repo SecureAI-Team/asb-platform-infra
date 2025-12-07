@@ -129,7 +129,9 @@ jobs:
               echo "${ECS_ENV_FILE_B64}" | base64 -d > env/ecs.env
             else
               echo "[deploy] Generating env/ecs.env from template..."
+              echo "[deploy] Copying env/ecs.env.example -> env/ecs.env"
               cp env/ecs.env.example env/ecs.env
+              echo "[deploy] Populating env/ecs.env with secrets..."
 
               random_pw() {
                 tr -dc 'A-Za-z0-9' </dev/urandom | head -c "${1:-24}"
