@@ -45,6 +45,23 @@ jobs:
             REPO_URL="${REPO_URL:-https://github.com/${{ github.repository }}.git}"
             MAX_RETRIES=3
             RETRY_SLEEP=5
+            retry_cmd() {
+              local desc="$1"
+              shift
+              local attempt=1
+              while true; do
+                if "$@"; then
+                  break
+                fi
+                if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
+                  echo "[deploy] ${desc} failed after ${MAX_RETRIES} attempts."
+                  exit 1
+                fi
+                attempt=$((attempt + 1))
+                echo "[deploy] ${desc} failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
+                sleep "${RETRY_SLEEP}"
+              done
+            }
 
             echo "[deploy] Validating ECS runtime requirements..."
             REQUIRED_CMDS=(git docker base64)
@@ -70,42 +87,15 @@ jobs:
               rm -rf "${DEPLOY_PATH}"
             fi
             mkdir -p "$(dirname "${DEPLOY_PATH}")"
-            attempt=1
-            until git clone "${REPO_URL}" "${DEPLOY_PATH}"; do
-              if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
-                echo "[deploy] Failed to clone repository after ${MAX_RETRIES} attempts."
-                exit 1
-              fi
-              attempt=$((attempt + 1))
-              echo "[deploy] Clone failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
-              sleep "${RETRY_SLEEP}"
-            done
+            retry_cmd "git clone" git clone "${REPO_URL}" "${DEPLOY_PATH}"
 
             echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
 
             echo "[deploy] Updating repository..."
-            attempt=1
-            until git fetch --all --prune; do
-              if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
-                echo "[deploy] git fetch failed after ${MAX_RETRIES} attempts."
-                exit 1
-              fi
-              attempt=$((attempt + 1))
-              echo "[deploy] git fetch failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
-              sleep "${RETRY_SLEEP}"
-            done
-            git checkout "${BRANCH}"
-            attempt=1
-            until git pull origin "${BRANCH}"; do
-              if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
-                echo "[deploy] git pull failed after ${MAX_RETRIES} attempts."
-                exit 1
-              fi
-              attempt=$((attempt + 1))
-              echo "[deploy] git pull failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
-              sleep "${RETRY_SLEEP}"
-            done
+            retry_cmd "git fetch" git -C "${DEPLOY_PATH}" fetch --all --prune
+            (cd "${DEPLOY_PATH}" && git checkout "${BRANCH}")
+            retry_cmd "git pull" git -C "${DEPLOY_PATH}" pull origin "${BRANCH}"
 
             echo "[deploy] Ensuring deploy script is executable..."
             chmod +x scripts/deploy.sh
