@@ -8,12 +8,6 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
-    inputs:
-      branch:
-        description: "Git branch to deploy"
-        required: false
-        default: "main"
 
 permissions:
   contents: read
@@ -26,13 +20,13 @@ jobs:
       ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-      BRANCH: ${{ github.event.inputs.branch || 'main' }}
-      REPO_URL: https://github.com/${{ github.repository }}.git
+      BRANCH: main
+      REPO_URL: git@github.com:${{ github.repository }}.git
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || 'main' }}
+          ref: main
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
