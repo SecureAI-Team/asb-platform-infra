@@ -2,7 +2,7 @@
 # Required repository secrets:
 #   - ECS_HOST / ECS_USER / ECS_PASSWORD: SSH access (password auth) to the ECS instance.
 #   - ACR_REGISTRY / ACR_USERNAME / ACR_PASSWORD: Aliyun Container Registry creds.
-#   - ECS_ENV_FILE_B64: Base64-encoded env/ecs.env content to place on the ECS host.
+#   - ECS_ENV_FILE_B64 (optional): Base64-encoded env/ecs.env content. When absent, the workflow generates one from env/ecs.env.example.
 name: Deploy ASB Platform to Aliyun ECS
 
 on:
@@ -62,10 +62,6 @@ jobs:
               echo "[deploy] Docker Compose plugin is not available."
               exit 1
             fi
-            if [[ -z "${ECS_ENV_FILE_B64:-}" ]]; then
-              echo "[deploy] ECS_ENV_FILE_B64 secret is required for unattended deployments."
-              exit 1
-            fi
             echo "[deploy] ECS prerequisites OK."
 
             echo "[deploy] Ensuring repository exists at ${DEPLOY_PATH}"
@@ -114,9 +110,49 @@ jobs:
             echo "[deploy] Ensuring deploy script is executable..."
             chmod +x scripts/deploy.sh
 
-            echo "[deploy] Writing env/ecs.env from secret..."
             mkdir -p env
-            echo "${ECS_ENV_FILE_B64}" | base64 -d > env/ecs.env
+            if [[ -n "${ECS_ENV_FILE_B64:-}" ]]; then
+              echo "[deploy] Writing env/ecs.env from secret..."
+              echo "${ECS_ENV_FILE_B64}" | base64 -d > env/ecs.env
+            else
+              echo "[deploy] Generating env/ecs.env from template..."
+              cp env/ecs.env.example env/ecs.env
+
+              random_pw() {
+                tr -dc 'A-Za-z0-9' </dev/urandom | head -c "${1:-24}"
+              }
+
+              sed -i \
+                -e "s|^ACR_REGISTRY=.*|ACR_REGISTRY=${ACR_REGISTRY}|" \
+                -e "s|^ACR_USERNAME=.*|ACR_USERNAME=${ACR_USERNAME}|" \
+                -e "s|^ACR_PASSWORD=.*|ACR_PASSWORD=${ACR_PASSWORD}|" \
+                -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(random_pw)|" \
+                -e "s|^KEYCLOAK_ADMIN_PASSWORD=.*|KEYCLOAK_ADMIN_PASSWORD=$(random_pw)|" \
+                env/ecs.env
+
+              ACR_NAMESPACE_VALUE=$(grep '^ACR_NAMESPACE=' env/ecs.env | cut -d'=' -f2-)
+              ACR_NAMESPACE_VALUE=${ACR_NAMESPACE_VALUE:-asbsecurity}
+
+              declare -A IMAGE_MAP=(
+                ["ASB_CP_BACKEND_IMAGE"]="cp-backend:latest"
+                ["ASB_CP_FRONTEND_IMAGE"]="cp-frontend:latest"
+                ["ASB_GATEWAY_IMAGE"]="asb-secure-gateway:latest"
+                ["ASB_AUTH_IMAGE"]="auth:latest"
+                ["ASB_POLICY_IMAGE"]="policy:latest"
+                ["ASB_PRIVACY_IMAGE"]="privacy:latest"
+                ["ASB_PROMPT_DEFENSE_IMAGE"]="prompt-defense:latest"
+                ["ASB_OUTPUT_GUARD_IMAGE"]="output-guard:latest"
+                ["ASB_AGENT_CONTROL_IMAGE"]="agent-control:latest"
+                ["ASB_AUDIT_IMAGE"]="audit:latest"
+                ["ASB_EXAMPLE_SERVICE_IMAGE"]="example-service:latest"
+              )
+
+              for key in "${!IMAGE_MAP[@]}"; do
+                image_tag="${IMAGE_MAP[$key]}"
+                sed -i "s|^${key}=.*|${key}=${ACR_REGISTRY}/${ACR_NAMESPACE_VALUE}/${image_tag}|" env/ecs.env
+              done
+            fi
+
             chmod 600 env/ecs.env
 
             echo "[deploy] Running deployment..."
