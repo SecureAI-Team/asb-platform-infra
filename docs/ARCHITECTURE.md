@@ -55,7 +55,7 @@ All containers attach to the `asbnet` bridge network. Nginx is the only service 
    cd /opt/asb-platform-infra
    scripts/deploy.sh
    ```
-   The script logs into ACR (if creds exist), pulls images, and starts/reconciles the compose stack.
+   The script logs into ACR (if creds exist), pulls images, stops the running stack, removes all named volumes (`pgdata`, `redis-data`, `keycloak-data`, `clickhouse-data`), and brings the compose stack back up. **All persistent data is wiped on every run**, so only use this flow in disposable test environments unless you adjust the script.
 5. **Optional CI/CD:** `.github/workflows/deploy-ecs.yml` SSHes into the host and runs `scripts/deploy.sh`. It assumes the repo is already cloned on ECS.
 
 ## Initialization Hooks & Manual Steps
