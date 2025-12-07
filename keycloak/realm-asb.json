@@ -1,0 +1,61 @@
+{
+  "realm": "asb",
+  "enabled": true,
+  "displayName": "ASB Security Platform",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "verifyEmail": false,
+  "clients": [
+    {
+      "clientId": "cp-frontend",
+      "name": "ASB Control Plane Frontend",
+      "publicClient": true,
+      "rootUrl": "https://example.com/cp",
+      "redirectUris": [
+        "https://example.com/cp/*",
+        "http://localhost:*/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "cp-backend",
+      "name": "ASB Control Plane Backend",
+      "secret": "replace-me-backend-secret",
+      "serviceAccountsEnabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "asb-gateway",
+      "name": "ASB Secure Gateway",
+      "secret": "replace-me-gateway-secret",
+      "serviceAccountsEnabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect"
+    }
+  ],
+  "users": [],
+  "roles": {
+    "realm": [
+      {
+        "name": "cp-admin",
+        "description": "Control plane administrator"
+      },
+      {
+        "name": "gateway-service",
+        "description": "Gateway service account"
+      }
+    ]
+  }
+}
+

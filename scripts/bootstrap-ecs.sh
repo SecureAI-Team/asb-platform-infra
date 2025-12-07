@@ -4,6 +4,9 @@ set -euo pipefail
 ASB_BASE_DIR="${ASB_BASE_DIR:-/opt/asb-platform-infra}"
 ENV_FILE="${ASB_BASE_DIR}/env/ecs.env"
 ENV_TEMPLATE="${ASB_BASE_DIR}/env/ecs.env.example"
+CERTS_DIR="${ASB_BASE_DIR}/certs"
+CERT_KEY="${CERTS_DIR}/server.key"
+CERT_CRT="${CERTS_DIR}/server.crt"
 
 log() {
   echo "[asb-bootstrap] $*"
@@ -44,7 +47,7 @@ install_docker() {
 
   log "Installing Docker Engine + Compose plugin..."
   apt-get update -y
-  apt-get install -y ca-certificates curl gnupg lsb-release
+  apt-get install -y ca-certificates curl gnupg lsb-release openssl
 
   install -m 0755 -d /etc/apt/keyrings
   if [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
@@ -99,6 +102,23 @@ generate_env_if_missing() {
   log "env/ecs.env generated. Review and adjust as needed."
 }
 
+generate_certs_if_missing() {
+  if [[ -f "${CERT_KEY}" && -f "${CERT_CRT}" ]]; then
+    log "TLS certificates already exist; skipping generation."
+    return
+  fi
+
+  log "Generating self-signed TLS certificate..."
+  mkdir -p "${CERTS_DIR}"
+  openssl req -x509 -nodes -newkey rsa:4096 \
+    -keyout "${CERT_KEY}" \
+    -out "${CERT_CRT}" \
+    -days 365 \
+    -subj "/C=CN/ST=Hangzhou/L=Hangzhou/O=ASB Security/OU=Platform/CN=asb-local"
+  chmod 600 "${CERT_KEY}" "${CERT_CRT}"
+  log "Self-signed cert created at ${CERTS_DIR}. Replace with real certificates for production."
+}
+
 acr_login_if_configured() {
   if [[ ! -f "${ENV_FILE}" ]]; then
     log "No ${ENV_FILE} found. Skipping ACR login (configure env/ecs.env later)."
@@ -123,10 +143,10 @@ post_summary() {
 Docker & Docker Compose plugin are installed.
 
 Next steps:
-  1. git clone https://github.com/<your-org>/asb-platform-infra.git ${ASB_BASE_DIR}
-  2. Run scripts/bootstrap-ecs.sh again with ASB_BASE_DIR pointing to your repo
-     root to auto-generate env/ecs.env if it does not exist (random secrets included).
-  3. Review env/ecs.env and adjust any values (ports, image tags) if needed.
+  1. git clone https://github.com/SecureAI-Team/asb-platform-infra.git ${ASB_BASE_DIR}
+  2. Copy env/ecs.env.example to env/ecs.env (first run of this script can do it)
+     and update registry credentials, image tags, and service secrets.
+  3. Replace certs/server.crt & certs/server.key with trusted certs if needed.
   4. Run scripts/deploy.sh (manually or via CI) to pull images and start the stack.
 
 You can re-run this bootstrap script safely; it only installs missing components.
@@ -139,6 +159,7 @@ main() {
   install_docker
   prepare_directories
   generate_env_if_missing
+  generate_certs_if_missing
   acr_login_if_configured
   post_summary
   log "Bootstrap procedure complete."

@@ -56,7 +56,7 @@ main() {
   docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull
 
   log "Applying docker compose stack..."
-  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d
+  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans
 
   log "ASB platform deployment complete. Use 'docker ps' to inspect services."
 }

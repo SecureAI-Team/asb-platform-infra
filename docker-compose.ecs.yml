@@ -33,6 +33,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-asb_platform}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-asb} -d ${POSTGRES_DB:-asb_platform}"]
       interval: 30s
@@ -46,6 +47,11 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     volumes:
       - redis-data:/data
     networks:
@@ -61,8 +67,12 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change_me}
     volumes:
       - keycloak-data:/opt/keycloak/data
-    ports:
-      - "${KEYCLOAK_PORT:-8081}:8080"
+      - ./keycloak/realm-asb.json:/opt/keycloak/realms/realm-asb.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/health/ready || exit 1"]
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - asbnet
 
@@ -73,8 +83,8 @@ services:
     command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
     volumes:
       - ./deploy/opa/policies:/policies:ro
-    ports:
-      - "8181:8181"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8181/health || exit 1"]
     networks:
       - asbnet
 
@@ -86,8 +96,11 @@ services:
       CLICKHOUSE_DB: asb_events
     volumes:
       - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8123/ping || exit 1"]
     networks:
       - asbnet
 
@@ -96,10 +109,14 @@ services:
     image: ${ASB_CP_BACKEND_IMAGE}
     restart: unless-stopped
     depends_on:
-      - postgres
-      - keycloak
-      - opa
-      - clickhouse
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      opa:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
     environment:
       ASB_CP_POSTGRES_HOST: postgres
       ASB_CP_POSTGRES_PORT: 5432
@@ -115,8 +132,11 @@ services:
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_DB: asb_events
       PORT: 8080
-    ports:
-      - "${CP_BACKEND_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - asbnet
 
@@ -125,12 +145,16 @@ services:
     image: ${ASB_CP_FRONTEND_IMAGE}
     restart: unless-stopped
     depends_on:
-      - cp-backend
+      cp-backend:
+        condition: service_healthy
     environment:
       VITE_API_BASE_URL: http://cp-backend:8080
       VITE_KEYCLOAK_URL: http://keycloak:${KEYCLOAK_PORT:-8081}
-    ports:
-      - "${CP_FRONTEND_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:80/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - asbnet
 
@@ -139,14 +163,22 @@ services:
     image: ${ASB_GATEWAY_IMAGE}
     restart: unless-stopped
     depends_on:
-      - cp-backend
-      - auth-service
-      - policy-service
-      - privacy-service
-      - prompt-defense
-      - output-guard
-      - agent-control
-      - audit-service
+      cp-backend:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      policy-service:
+        condition: service_healthy
+      privacy-service:
+        condition: service_started
+      prompt-defense:
+        condition: service_started
+      output-guard:
+        condition: service_started
+      agent-control:
+        condition: service_started
+      audit-service:
+        condition: service_healthy
     environment:
       CONTROL_PLANE_BASE_URL: http://cp-backend:8080
       AUTH_SERVICE_URL: http://auth-service:8001
@@ -157,8 +189,11 @@ services:
       AGENT_CONTROL_URL: http://agent-control:8006
       AUDIT_SERVICE_URL: http://audit-service:8007
       PORT: 8000
-    ports:
-      - "${GATEWAY_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8000/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - asbnet
 
@@ -167,7 +202,13 @@ services:
     image: ${ASB_AUTH_IMAGE}
     restart: unless-stopped
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8001/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
@@ -183,7 +224,13 @@ services:
     image: ${ASB_POLICY_IMAGE}
     restart: unless-stopped
     depends_on:
-      - opa
+      opa:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8002/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     environment:
       OPA_BASE_URL: http://opa:8181
       PORT: 8002
@@ -196,6 +243,11 @@ services:
     restart: unless-stopped
     environment:
       PORT: 8003
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8003/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - asbnet
 
@@ -205,6 +257,11 @@ services:
     restart: unless-stopped
     environment:
       PORT: 8004
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8004/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - asbnet
 
@@ -214,6 +271,11 @@ services:
     restart: unless-stopped
     environment:
       PORT: 8005
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8005/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - asbnet
 
@@ -223,6 +285,11 @@ services:
     restart: unless-stopped
     environment:
       PORT: 8006
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8006/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     networks:
       - asbnet
 
@@ -231,7 +298,13 @@ services:
     image: ${ASB_AUDIT_IMAGE}
     restart: unless-stopped
     depends_on:
-      - clickhouse
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8007/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     environment:
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_DB: asb_events
@@ -245,6 +318,29 @@ services:
     restart: unless-stopped
     environment:
       PORT: 8010
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8010/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    depends_on:
+      cp-frontend:
+        condition: service_started
+      gateway:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    networks:
+      - asbnet
     networks:
       - asbnet
 
