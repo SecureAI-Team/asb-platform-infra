@@ -21,7 +21,7 @@ jobs:
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
       BRANCH: main
-      REPO_URL: git@github.com:${{ github.repository }}.git
+      REPO_URL: https://github.com/${{ github.repository }}.git
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
