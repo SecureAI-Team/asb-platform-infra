@@ -1,17 +1,17 @@
-# Deploy ASB platform onto ECS via SSH.
-# Required secrets: ECS_HOST, ECS_USER, ECS_SSH_KEY, ECS_DEPLOY_PATH (path to repo on ECS).
-# Trigger manually via GitHub UI: Actions -> Deploy ASB Platform to ECS -> Run workflow.
-name: Deploy ASB Platform to ECS
+# This workflow provides a "one-click" deploy from GitHub Actions.
+# Required repository secrets:
+#   - ECS_HOST / ECS_USER / ECS_SSH_KEY: SSH access to the Aliyun ECS instance.
+#   - ECS_DEPLOY_PATH: Absolute path to the asb-platform-infra checkout on ECS.
+#   - ACR_REGISTRY / ACR_USERNAME / ACR_PASSWORD: Aliyun Container Registry creds.
+name: Deploy ASB Platform to Aliyun ECS
 
 on:
   workflow_dispatch:
     inputs:
-      deploy_branch:
-        description: "Git branch to deploy on ECS"
+      branch:
+        description: "Git branch to deploy"
         required: false
         default: "main"
-  repository_dispatch:
-    types: [trigger-ecs-deploy]
 
 permissions:
   contents: read
@@ -19,11 +19,17 @@ permissions:
 jobs:
   deploy-to-ecs:
     runs-on: ubuntu-latest
+    env:
+      ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      ECS_DEPLOY_PATH: ${{ secrets.ECS_DEPLOY_PATH }}
+      BRANCH: ${{ github.event.inputs.branch || 'main' }}
     steps:
-      - name: Checkout infra repo
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.deploy_branch || 'main' }}
+          ref: ${{ github.event.inputs.branch || 'main' }}
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -32,24 +38,28 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           script_stop: true
+          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ECS_DEPLOY_PATH,BRANCH
           script: |
             set -euo pipefail
-            DEPLOY_PATH="${{ secrets.ECS_DEPLOY_PATH }}"
-            BRANCH="${{ github.event.inputs.deploy_branch || 'main' }}"
+            DEPLOY_PATH="${ECS_DEPLOY_PATH:-/opt/asb-platform-infra}"
+            BRANCH="${BRANCH:-main}"
 
-            echo "[deploy] Using deploy path: ${DEPLOY_PATH}"
+            echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
 
-            echo "[deploy] Fetching latest code..."
-            git fetch origin "${BRANCH}"
+            echo "[deploy] Updating repository..."
+            git fetch --all --prune
             git checkout "${BRANCH}"
             git pull origin "${BRANCH}"
 
             echo "[deploy] Ensuring deploy script is executable..."
             chmod +x scripts/deploy.sh
 
-            echo "[deploy] Running deployment script..."
-            scripts/deploy.sh
+            echo "[deploy] Running deployment..."
+            ACR_REGISTRY="${ACR_REGISTRY:-}" \
+            ACR_USERNAME="${ACR_USERNAME:-}" \
+            ACR_PASSWORD="${ACR_PASSWORD:-}" \
+            ./scripts/deploy.sh
 
-            echo "[deploy] Deployment completed."
+            echo "[deploy] Deployment completed successfully."
 

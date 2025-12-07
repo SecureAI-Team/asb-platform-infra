@@ -1,15 +1,14 @@
 # -----------------------------------------------------------------------------
-# ASB Platform Infra - ECS Compose Stack
+# ASB Platform ECS Compose Stack
 # -----------------------------------------------------------------------------
-# - Runs the entire ASB Security Platform on a single Alibaba Cloud ECS host.
-# - Assumes all application images are available in a registry and referenced
-#   via environment variables defined in env/ecs.env (or a compatible .env).
-# - Manual start: docker compose -f docker-compose.ecs.yml \
-#                 --env-file env/ecs.env up -d
+# - Runs the entire ASB Security Platform on a single Ubuntu 24.04 ECS host.
+# - Service image references, credentials, and port mappings come from env/ecs.env.
+# - Launch command:
+#     docker compose --env-file env/ecs.env -f docker-compose.ecs.yml up -d
 # -----------------------------------------------------------------------------
 version: "3.9"
 
-x-env-defaults: &env_defaults
+x-env: &env_defaults
   env_file:
     - env/ecs.env
 
@@ -22,26 +21,20 @@ volumes:
   redis-data:
   keycloak-data:
   clickhouse-data:
-  # prometheus-data:
-  # grafana-data:
 
 services:
   postgres:
     <<: *env_defaults
-    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
+      POSTGRES_USER: ${POSTGRES_USER:-asb}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-asbpass}
       POSTGRES_DB: ${POSTGRES_DB:-asb_platform}
-      POSTGRES_USER: ${POSTGRES_USER:-asb_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-asb_admin} -d ${POSTGRES_DB:-asb_platform}",
-        ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-asb} -d ${POSTGRES_DB:-asb_platform}"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -50,12 +43,9 @@ services:
 
   redis:
     <<: *env_defaults
-    image: ${REDIS_IMAGE:-redis:7-alpine}
+    image: redis:7-alpine
     restart: unless-stopped
-    command: >
-      sh -c 'redis-server
-      --appendonly yes
-      ${REDIS_PASSWORD:+--requirepass "$${REDIS_PASSWORD}"}'
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
     networks:
@@ -63,55 +53,47 @@ services:
 
   keycloak:
     <<: *env_defaults
-    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:24.0}
+    image: quay.io/keycloak/keycloak:24.0
     restart: unless-stopped
-    depends_on:
-      - postgres
-    command: >
-      start --optimized
-      --http-port=${KEYCLOAK_INTERNAL_PORT:-8080}
+    command: ["start-dev", "--http-relative-path=/"]
     environment:
-      KC_DB: postgres
-      KC_DB_URL: ${KEYCLOAK_DB_URL:-jdbc:postgresql://postgres:5432/keycloak}
-      KC_DB_USERNAME: ${KEYCLOAK_DB_USERNAME:-keycloak}
-      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-changeit}
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-    ports:
-      - "${KEYCLOAK_PORT:-8080}:${KEYCLOAK_INTERNAL_PORT:-8080}"
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change_me}
     volumes:
       - keycloak-data:/opt/keycloak/data
+    ports:
+      - "${KEYCLOAK_PORT:-8081}:8080"
     networks:
       - asbnet
 
   opa:
     <<: *env_defaults
-    image: ${OPA_IMAGE:-openpolicyagent/opa:0.63.0}
+    image: openpolicyagent/opa:0.63.0
     restart: unless-stopped
     command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
     volumes:
-      - ./policies:/policies:ro
+      - ./deploy/opa/policies:/policies:ro
+    ports:
+      - "8181:8181"
     networks:
       - asbnet
 
   clickhouse:
     <<: *env_defaults
-    image: ${CLICKHOUSE_IMAGE:-clickhouse/clickhouse-server:23.8}
+    image: clickhouse/clickhouse-server:23.8
     restart: unless-stopped
     environment:
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-asb_events}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
-    ports:
-      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      CLICKHOUSE_DB: asb_events
     volumes:
       - clickhouse-data:/var/lib/clickhouse
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
     networks:
       - asbnet
 
-  asb-control-plane-backend:
+  cp-backend:
     <<: *env_defaults
-    image: ${ASB_CP_BACKEND_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/control-plane-backend:latest}
+    image: ${ASB_CP_BACKEND_IMAGE}
     restart: unless-stopped
     depends_on:
       - postgres
@@ -121,42 +103,43 @@ services:
     environment:
       ASB_CP_POSTGRES_HOST: postgres
       ASB_CP_POSTGRES_PORT: 5432
-      ASB_CP_POSTGRES_DB: ${ASB_CP_POSTGRES_DB:-asb_control_plane}
-      ASB_CP_POSTGRES_USER: ${ASB_CP_POSTGRES_USER:-cp_app}
-      ASB_CP_POSTGRES_PASSWORD: ${ASB_CP_POSTGRES_PASSWORD:-changeme}
-      KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL:-http://keycloak:${KEYCLOAK_INTERNAL_PORT:-8080}}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-asb}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-asb-control-plane}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-changeme}
-      OPA_BASE_URL: ${OPA_BASE_URL:-http://opa:8181}
-      OPA_POLICY_PATH: ${OPA_POLICY_PATH:-/v1/data/asb/policies}
-      RULES_SERVICE_URL: ${RULES_SERVICE_URL:-http://opa:8181/v1/data/asb/rules}
-      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-asb_events}
+      ASB_CP_POSTGRES_DB: ${ASB_CP_POSTGRES_DB:-asb_platform}
+      ASB_CP_POSTGRES_USER: ${POSTGRES_USER:-asb}
+      ASB_CP_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-asbpass}
+      ASB_CP_KEYCLOAK_BASE_URL: http://keycloak:8080
+      ASB_CP_KEYCLOAK_REALM: ${ASB_CP_KEYCLOAK_REALM:-asb}
+      ASB_CP_KEYCLOAK_CLIENT_ID: ${ASB_CP_KEYCLOAK_CLIENT_ID:-cp-frontend}
+      ASB_CP_KEYCLOAK_CLIENT_SECRET: ${ASB_CP_KEYCLOAK_CLIENT_SECRET:-changeme}
+      ASB_CP_OPA_BASE_URL: http://opa:8181
+      ASB_CP_OPA_POLICY_PATH: ${ASB_CP_OPA_POLICY_PATH:-/v1/data/asb/policies}
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_DB: asb_events
+      PORT: 8080
     ports:
       - "${CP_BACKEND_PORT:-8080}:8080"
     networks:
       - asbnet
 
-  asb-control-plane-frontend:
+  cp-frontend:
     <<: *env_defaults
-    image: ${ASB_CP_FRONTEND_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/control-plane-frontend:latest}
+    image: ${ASB_CP_FRONTEND_IMAGE}
     restart: unless-stopped
     depends_on:
-      - asb-control-plane-backend
+      - cp-backend
     environment:
-      VITE_API_BASE_URL: ${CP_FRONTEND_API_URL:-http://asb-control-plane-backend:8080}
+      VITE_API_BASE_URL: http://cp-backend:8080
+      VITE_KEYCLOAK_URL: http://keycloak:${KEYCLOAK_PORT:-8081}
     ports:
       - "${CP_FRONTEND_PORT:-80}:80"
     networks:
       - asbnet
 
-  asb-gateway:
+  gateway:
     <<: *env_defaults
-    image: ${ASB_GATEWAY_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/secure-gateway:latest}
+    image: ${ASB_GATEWAY_IMAGE}
     restart: unless-stopped
     depends_on:
-      - redis
+      - cp-backend
       - auth-service
       - policy-service
       - privacy-service
@@ -165,15 +148,15 @@ services:
       - agent-control
       - audit-service
     environment:
-      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-http://asb-control-plane-backend:8080}
-      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:8001}
-      POLICY_SERVICE_URL: ${POLICY_SERVICE_URL:-http://policy-service:8002}
-      PRIVACY_SERVICE_URL: ${PRIVACY_SERVICE_URL:-http://privacy-service:8003}
-      PROMPT_DEFENSE_URL: ${PROMPT_DEFENSE_URL:-http://prompt-defense:8004}
-      OUTPUT_GUARD_URL: ${OUTPUT_GUARD_URL:-http://output-guard:8005}
-      AGENT_CONTROL_URL: ${AGENT_CONTROL_URL:-http://agent-control:8006}
-      AUDIT_SERVICE_URL: ${AUDIT_SERVICE_URL:-http://audit-service:8007}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      CONTROL_PLANE_BASE_URL: http://cp-backend:8080
+      AUTH_SERVICE_URL: http://auth-service:8001
+      POLICY_SERVICE_URL: http://policy-service:8002
+      PRIVACY_SERVICE_URL: http://privacy-service:8003
+      PROMPT_DEFENSE_URL: http://prompt-defense:8004
+      OUTPUT_GUARD_URL: http://output-guard:8005
+      AGENT_CONTROL_URL: http://agent-control:8006
+      AUDIT_SERVICE_URL: http://audit-service:8007
+      PORT: 8000
     ports:
       - "${GATEWAY_PORT:-8000}:8000"
     networks:
@@ -181,126 +164,87 @@ services:
 
   auth-service:
     <<: *env_defaults
-    image: ${ASB_AUTH_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/auth-service:latest}
+    image: ${ASB_AUTH_IMAGE}
     restart: unless-stopped
     depends_on:
       - postgres
-      - redis
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_NAME: ${AUTH_DB_NAME:-asb_auth}
-      DB_USER: ${AUTH_DB_USER:-auth}
-      DB_PASSWORD: ${AUTH_DB_PASSWORD:-changeme}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      SERVICE_PORT: 8001
-    ports:
-      - "${AUTH_SERVICE_PORT:-18001}:8001"
+      DB_NAME: ${POSTGRES_DB:-asb_platform}
+      DB_USER: ${POSTGRES_USER:-asb}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-asbpass}
+      PORT: 8001
     networks:
       - asbnet
 
   policy-service:
     <<: *env_defaults
-    image: ${ASB_POLICY_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/policy-service:latest}
+    image: ${ASB_POLICY_IMAGE}
     restart: unless-stopped
     depends_on:
       - opa
     environment:
-      OPA_BASE_URL: ${OPA_BASE_URL:-http://opa:8181}
-      SERVICE_PORT: 8002
-    ports:
-      - "${POLICY_SERVICE_PORT:-18002}:8002"
+      OPA_BASE_URL: http://opa:8181
+      PORT: 8002
     networks:
       - asbnet
 
   privacy-service:
     <<: *env_defaults
-    image: ${ASB_PRIVACY_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/privacy-service:latest}
+    image: ${ASB_PRIVACY_IMAGE}
     restart: unless-stopped
-    depends_on:
-      - redis
     environment:
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      SERVICE_PORT: 8003
-    ports:
-      - "${PRIVACY_SERVICE_PORT:-18003}:8003"
+      PORT: 8003
     networks:
       - asbnet
 
   prompt-defense:
     <<: *env_defaults
-    image: ${ASB_PROMPT_DEFENSE_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/prompt-defense:latest}
+    image: ${ASB_PROMPT_DEFENSE_IMAGE}
     restart: unless-stopped
     environment:
-      SERVICE_PORT: 8004
-    ports:
-      - "${PROMPT_DEFENSE_PORT:-18004}:8004"
+      PORT: 8004
     networks:
       - asbnet
 
   output-guard:
     <<: *env_defaults
-    image: ${ASB_OUTPUT_GUARD_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/output-guard:latest}
+    image: ${ASB_OUTPUT_GUARD_IMAGE}
     restart: unless-stopped
     environment:
-      SERVICE_PORT: 8005
-    ports:
-      - "${OUTPUT_GUARD_PORT:-18005}:8005"
+      PORT: 8005
     networks:
       - asbnet
 
   agent-control:
     <<: *env_defaults
-    image: ${ASB_AGENT_CONTROL_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/agent-control:latest}
+    image: ${ASB_AGENT_CONTROL_IMAGE}
     restart: unless-stopped
-    depends_on:
-      - redis
     environment:
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      SERVICE_PORT: 8006
-    ports:
-      - "${AGENT_CONTROL_PORT:-18006}:8006"
+      PORT: 8006
     networks:
       - asbnet
 
   audit-service:
     <<: *env_defaults
-    image: ${ASB_AUDIT_IMAGE:-registry.cn-hangzhou.aliyuncs.com/asb/audit-service:latest}
+    image: ${ASB_AUDIT_IMAGE}
     restart: unless-stopped
     depends_on:
       - clickhouse
     environment:
-      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
-      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-asb_events}
-      CLICKHOUSE_TABLE: ${CLICKHOUSE_TABLE:-audit_events}
-      SERVICE_PORT: 8007
-    ports:
-      - "${AUDIT_SERVICE_PORT:-18007}:8007"
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_DB: asb_events
+      PORT: 8007
     networks:
       - asbnet
 
-  # prometheus:
-  #   <<: *env_defaults
-  #   image: prom/prometheus:v2.52.0
-  #   restart: unless-stopped
-  #   volumes:
-  #     - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-  #     - prometheus-data:/prometheus
-  #   ports:
-  #     - "${PROMETHEUS_PORT:-19090}:9090"
-  #   networks:
-  #     - asbnet
-
-  # grafana:
-  #   <<: *env_defaults
-  #   image: grafana/grafana:10.4.3
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - prometheus
-  #   volumes:
-  #     - grafana-data:/var/lib/grafana
-  #   ports:
-  #     - "${GRAFANA_PORT:-13000}:3000"
-  #   networks:
-  #     - asbnet
+  example-service:
+    <<: *env_defaults
+    image: ${ASB_EXAMPLE_SERVICE_IMAGE}
+    restart: unless-stopped
+    environment:
+      PORT: 8010
+    networks:
+      - asbnet
 
