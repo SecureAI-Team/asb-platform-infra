@@ -118,6 +118,11 @@ jobs:
             echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
 
+            if [[ ! -f scripts/deploy.sh ]]; then
+              echo "[deploy] ERROR: scripts/deploy.sh not found after clone. Repository may be incomplete."
+              ls -al
+              exit 1
+            fi
             echo "[deploy] Ensuring deploy script is executable..."
             chmod +x scripts/deploy.sh
 
