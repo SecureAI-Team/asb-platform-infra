@@ -10,8 +10,26 @@ log() {
   printf '[asb-deploy] %s\n' "$*"
 }
 
+ensure_command() {
+  local cmd="$1"
+  if ! command -v "${cmd}" >/dev/null 2>&1; then
+    log "Required command '${cmd}' not found. Please install it and retry."
+    exit 1
+  fi
+}
+
+ensure_docker_compose() {
+  if ! docker compose version >/dev/null 2>&1; then
+    log "'docker compose' command unavailable. Install Docker Compose plugin before deploying."
+    exit 1
+  fi
+}
+
 main() {
   log "Starting deployment from ${REPO_ROOT}..."
+
+  ensure_command docker
+  ensure_docker_compose
 
   if [[ ! -f "${COMPOSE_FILE}" ]]; then
     log "Compose file ${COMPOSE_FILE} not found."

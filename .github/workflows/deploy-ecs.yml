@@ -5,6 +5,9 @@
 name: Deploy ASB Platform to Aliyun ECS
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       branch:
@@ -24,6 +27,7 @@ jobs:
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
       BRANCH: ${{ github.event.inputs.branch || 'main' }}
+      REPO_URL: https://github.com/${{ github.repository }}.git
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,11 +41,19 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           password: ${{ secrets.ECS_PASSWORD }}
           script_stop: true
-          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,BRANCH
+          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,BRANCH,REPO_URL
           script: |
             set -euo pipefail
             DEPLOY_PATH="/opt/asb-platform-infra"
             BRANCH="${BRANCH:-main}"
+            REPO_URL="${REPO_URL:-https://github.com/${{ github.repository }}.git}"
+
+            echo "[deploy] Ensuring repository exists at ${DEPLOY_PATH}"
+            if [[ ! -d "${DEPLOY_PATH}/.git" ]]; then
+              echo "[deploy] Repository missing; cloning ${REPO_URL}..."
+              mkdir -p "$(dirname "${DEPLOY_PATH}")"
+              git clone "${REPO_URL}" "${DEPLOY_PATH}"
+            fi
 
             echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
