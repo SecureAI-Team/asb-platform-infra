@@ -1,13 +1,3 @@
-# -----------------------------------------------------------------------------
-# ASB Platform ECS Compose Stack
-# -----------------------------------------------------------------------------
-# - Runs the entire ASB Security Platform on a single Ubuntu 24.04 ECS host.
-# - Service image references, credentials, and port mappings come from env/ecs.env.
-# - Launch command:
-#     docker compose --env-file env/ecs.env -f docker-compose.ecs.yml up -d
-# -----------------------------------------------------------------------------
-version: "3.9"
-
 x-env: &env_defaults
   env_file:
     - env/ecs.env
@@ -82,7 +72,7 @@ services:
     restart: unless-stopped
     command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
     volumes:
-      - ./deploy/opa/policies:/policies:ro
+      - ./opa/policies:/policies:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://localhost:8181/health || exit 1"]
     networks:
