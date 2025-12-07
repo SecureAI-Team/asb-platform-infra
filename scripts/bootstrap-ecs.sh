@@ -3,6 +3,7 @@ set -euo pipefail
 
 ASB_BASE_DIR="${ASB_BASE_DIR:-/opt/asb-platform-infra}"
 ENV_FILE="${ASB_BASE_DIR}/env/ecs.env"
+ENV_TEMPLATE="${ASB_BASE_DIR}/env/ecs.env.example"
 
 log() {
   echo "[asb-bootstrap] $*"
@@ -71,6 +72,33 @@ prepare_directories() {
   log "Directory ready."
 }
 
+random_string() {
+  tr -dc 'A-Za-z0-9' </dev/urandom | head -c "${1:-16}"
+}
+
+generate_env_if_missing() {
+  if [[ -f "${ENV_FILE}" ]]; then
+    log "env/ecs.env already present; skipping generation."
+    return
+  fi
+
+  if [[ ! -f "${ENV_TEMPLATE}" ]]; then
+    log "Template ${ENV_TEMPLATE} missing; cannot generate env file."
+    return
+  fi
+
+  log "Generating env/ecs.env from template with randomized secrets..."
+  mkdir -p "$(dirname "${ENV_FILE}")"
+  cp "${ENV_TEMPLATE}" "${ENV_FILE}"
+
+  sed -i \
+    -e "s/POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(random_string 24)/" \
+    -e "s/KEYCLOAK_ADMIN_PASSWORD=.*/KEYCLOAK_ADMIN_PASSWORD=$(random_string 24)/" \
+    "${ENV_FILE}"
+
+  log "env/ecs.env generated. Review and adjust as needed."
+}
+
 acr_login_if_configured() {
   if [[ ! -f "${ENV_FILE}" ]]; then
     log "No ${ENV_FILE} found. Skipping ACR login (configure env/ecs.env later)."
@@ -96,9 +124,10 @@ Docker & Docker Compose plugin are installed.
 
 Next steps:
   1. git clone https://github.com/<your-org>/asb-platform-infra.git ${ASB_BASE_DIR}
-  2. Copy env/ecs.env.example to env/ecs.env and update registry tags, passwords,
-     and Aliyun credentials. Keep env/ecs.env out of Git.
-  3. Run scripts/deploy.sh (manually or via CI) to pull images and start the stack.
+  2. Run scripts/bootstrap-ecs.sh again with ASB_BASE_DIR pointing to your repo
+     root to auto-generate env/ecs.env if it does not exist (random secrets included).
+  3. Review env/ecs.env and adjust any values (ports, image tags) if needed.
+  4. Run scripts/deploy.sh (manually or via CI) to pull images and start the stack.
 
 You can re-run this bootstrap script safely; it only installs missing components.
 EOF
@@ -109,6 +138,7 @@ main() {
   assert_ubuntu
   install_docker
   prepare_directories
+  generate_env_if_missing
   acr_login_if_configured
   post_summary
   log "Bootstrap procedure complete."
