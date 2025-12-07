@@ -55,6 +55,9 @@ main() {
   log "Pulling latest container images..."
   docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" pull
 
+  log "Stopping any existing stack..."
+  docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" down --remove-orphans
+
   log "Applying docker compose stack..."
   docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --remove-orphans
 
