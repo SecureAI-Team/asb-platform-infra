@@ -1,3 +1,5 @@
+SET allow_experimental_object_type = 1;
+
 CREATE DATABASE IF NOT EXISTS asb_events;
 
 CREATE TABLE IF NOT EXISTS asb_events.security_events
@@ -11,7 +13,7 @@ CREATE TABLE IF NOT EXISTS asb_events.security_events
     policy String,
     decision String,
     request_id String,
-    metadata JSON
+    metadata Object('json')
 )
 ENGINE = MergeTree
 ORDER BY (occurred_at, event_id)
