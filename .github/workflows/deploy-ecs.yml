@@ -46,27 +46,6 @@ jobs:
 
             DEPLOY_PATH="/opt/asb-platform-infra"
             BRANCH="${BRANCH:-main}"
-            REPO_URL="${REPO_URL:-https://github.com/SecureAI-Team/asb-platform-infra.git}"
-            MAX_RETRIES=3
-            RETRY_SLEEP=5
-
-            retry_cmd() {
-              local desc="$1"
-              shift
-              local attempt=1
-              while true; do
-                if "$@"; then
-                  break
-                fi
-                if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
-                  echo "[deploy] ${desc} failed after ${MAX_RETRIES} attempts."
-                  exit 1
-                fi
-                attempt=$((attempt + 1))
-                echo "[deploy] ${desc} failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
-                sleep "${RETRY_SLEEP}"
-              done
-            }
 
             echo "[deploy] Validating ECS runtime requirements..."
             for cmd in git docker base64; do
@@ -107,7 +86,16 @@ jobs:
             mkdir -p env
             echo "[deploy] Contents of env template directory:"
             ls -al env || true
+
+            set +e
             if [[ -n "${ECS_ENV_FILE_B64:-}" ]]; then
+              HAS_ENV_SECRET=1
+            else
+              HAS_ENV_SECRET=0
+            fi
+            set -euo pipefail
+
+            if [[ "${HAS_ENV_SECRET}" -eq 1 ]]; then
               echo "[deploy] Writing env/ecs.env from secret..."
               echo "${ECS_ENV_FILE_B64}" | base64 -d > env/ecs.env
             else
