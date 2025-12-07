@@ -90,7 +90,27 @@ jobs:
               rm -rf "${DEPLOY_PATH}"
             fi
             mkdir -p "$(dirname "${DEPLOY_PATH}")"
-            retry_cmd "git clone" git clone "${REPO_URL}" "${DEPLOY_PATH}"
+            clone_success=false
+            for attempt in $(seq 1 ${MAX_RETRIES}); do
+              echo "[deploy] Cloning repository (attempt ${attempt}/${MAX_RETRIES})..."
+              if git clone "${REPO_URL}" "${DEPLOY_PATH}"; then
+                clone_success=true
+                break
+              fi
+              if [[ ${attempt} -lt ${MAX_RETRIES} ]]; then
+                echo "[deploy] git clone failed, but will retry in ${RETRY_SLEEP}s..."
+                sleep "${RETRY_SLEEP}"
+              fi
+            done
+
+            if [[ "${clone_success}" != "true" ]]; then
+              if [[ -d "${DEPLOY_PATH}/.git" ]]; then
+                echo "[deploy] Clone reported failures, but repository directory exists; proceeding anyway."
+              else
+                echo "[deploy] Failed to clone repository after ${MAX_RETRIES} attempts."
+                exit 1
+              fi
+            fi
 
             echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
