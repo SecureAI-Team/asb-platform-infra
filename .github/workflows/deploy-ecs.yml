@@ -19,6 +19,7 @@ permissions:
 jobs:
   deploy-to-ecs:
     runs-on: ubuntu-latest
+    environment: secrets
     env:
       ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
