@@ -39,12 +39,16 @@ jobs:
           script_stop: true
           envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ECS_ENV_FILE_B64,BRANCH,REPO_URL
           script: |
+            cat <<'BASH' >/tmp/asb-deploy.sh
+            #!/usr/bin/env bash
             set -euo pipefail
+
             DEPLOY_PATH="/opt/asb-platform-infra"
             BRANCH="${BRANCH:-main}"
-            REPO_URL="${REPO_URL:-https://github.com/${{ github.repository }}.git}"
+            REPO_URL="${REPO_URL:-https://github.com/SecureAI-Team/asb-platform-infra.git}"
             MAX_RETRIES=3
             RETRY_SLEEP=5
+
             retry_cmd() {
               local desc="$1"
               shift
@@ -64,8 +68,7 @@ jobs:
             }
 
             echo "[deploy] Validating ECS runtime requirements..."
-            REQUIRED_CMDS=(git docker base64)
-            for cmd in "${REQUIRED_CMDS[@]}"; do
+            for cmd in git docker base64; do
               if ! command -v "${cmd}" >/dev/null 2>&1; then
                 echo "[deploy] Missing required command '${cmd}'."
                 exit 1
@@ -93,9 +96,9 @@ jobs:
             cd "${DEPLOY_PATH}"
 
             echo "[deploy] Updating repository..."
-            retry_cmd "git fetch" git -C "${DEPLOY_PATH}" fetch --all --prune
-            (cd "${DEPLOY_PATH}" && git checkout "${BRANCH}")
-            retry_cmd "git pull" git -C "${DEPLOY_PATH}" pull origin "${BRANCH}"
+            retry_cmd "git fetch" git fetch --all --prune
+            git checkout "${BRANCH}"
+            retry_cmd "git pull" git pull origin "${BRANCH}"
 
             echo "[deploy] Ensuring deploy script is executable..."
             chmod +x scripts/deploy.sh
@@ -123,24 +126,23 @@ jobs:
               ACR_NAMESPACE_VALUE=$(grep '^ACR_NAMESPACE=' env/ecs.env | cut -d'=' -f2-)
               ACR_NAMESPACE_VALUE=${ACR_NAMESPACE_VALUE:-asbsecurity}
 
-              declare -A IMAGE_MAP=(
-                ["ASB_CP_BACKEND_IMAGE"]="cp-backend:latest"
-                ["ASB_CP_FRONTEND_IMAGE"]="cp-frontend:latest"
-                ["ASB_GATEWAY_IMAGE"]="asb-secure-gateway:latest"
-                ["ASB_AUTH_IMAGE"]="auth:latest"
-                ["ASB_POLICY_IMAGE"]="policy:latest"
-                ["ASB_PRIVACY_IMAGE"]="privacy:latest"
-                ["ASB_PROMPT_DEFENSE_IMAGE"]="prompt-defense:latest"
-                ["ASB_OUTPUT_GUARD_IMAGE"]="output-guard:latest"
-                ["ASB_AGENT_CONTROL_IMAGE"]="agent-control:latest"
-                ["ASB_AUDIT_IMAGE"]="audit:latest"
-                ["ASB_EXAMPLE_SERVICE_IMAGE"]="example-service:latest"
-              )
+              update_image() {
+                local key="$1"
+                local image="$2"
+                sed -i "s|^${key}=.*|${key}=${ACR_REGISTRY}/${ACR_NAMESPACE_VALUE}/${image}|" env/ecs.env
+              }
 
-              for key in "${!IMAGE_MAP[@]}"; do
-                image_tag="${IMAGE_MAP[$key]}"
-                sed -i "s|^${key}=.*|${key}=${ACR_REGISTRY}/${ACR_NAMESPACE_VALUE}/${image_tag}|" env/ecs.env
-              done
+              update_image "ASB_CP_BACKEND_IMAGE" "cp-backend:latest"
+              update_image "ASB_CP_FRONTEND_IMAGE" "cp-frontend:latest"
+              update_image "ASB_GATEWAY_IMAGE" "asb-secure-gateway:latest"
+              update_image "ASB_AUTH_IMAGE" "auth:latest"
+              update_image "ASB_POLICY_IMAGE" "policy:latest"
+              update_image "ASB_PRIVACY_IMAGE" "privacy:latest"
+              update_image "ASB_PROMPT_DEFENSE_IMAGE" "prompt-defense:latest"
+              update_image "ASB_OUTPUT_GUARD_IMAGE" "output-guard:latest"
+              update_image "ASB_AGENT_CONTROL_IMAGE" "agent-control:latest"
+              update_image "ASB_AUDIT_IMAGE" "audit:latest"
+              update_image "ASB_EXAMPLE_SERVICE_IMAGE" "example-service:latest"
             fi
 
             chmod 600 env/ecs.env
@@ -152,4 +154,6 @@ jobs:
             ./scripts/deploy.sh
 
             echo "[deploy] Deployment completed successfully."
+            BASH
+            bash /tmp/asb-deploy.sh
 
