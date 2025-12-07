@@ -2,6 +2,7 @@
 # Required repository secrets:
 #   - ECS_HOST / ECS_USER / ECS_PASSWORD: SSH access (password auth) to the ECS instance.
 #   - ACR_REGISTRY / ACR_USERNAME / ACR_PASSWORD: Aliyun Container Registry creds.
+#   - ECS_ENV_FILE_B64: Base64-encoded env/ecs.env content to place on the ECS host.
 name: Deploy ASB Platform to Aliyun ECS
 
 on:
@@ -20,6 +21,7 @@ jobs:
       ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      ECS_ENV_FILE_B64: ${{ secrets.ECS_ENV_FILE_B64 }}
       BRANCH: main
       REPO_URL: https://github.com/${{ github.repository }}.git
     steps:
@@ -35,7 +37,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           password: ${{ secrets.ECS_PASSWORD }}
           script_stop: true
-          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,BRANCH,REPO_URL
+          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ECS_ENV_FILE_B64,BRANCH,REPO_URL
           script: |
             set -euo pipefail
             DEPLOY_PATH="/opt/asb-platform-infra"
@@ -88,6 +90,14 @@ jobs:
 
             echo "[deploy] Ensuring deploy script is executable..."
             chmod +x scripts/deploy.sh
+
+            if [[ -n "${ECS_ENV_FILE_B64:-}" ]]; then
+              echo "[deploy] Writing env/ecs.env from secret..."
+              mkdir -p env
+              echo "${ECS_ENV_FILE_B64}" | base64 -d > env/ecs.env
+            else
+              echo "[deploy] Warning: ECS_ENV_FILE_B64 not set; assuming env/ecs.env already exists."
+            fi
 
             echo "[deploy] Running deployment..."
             ACR_REGISTRY="${ACR_REGISTRY:-}" \
