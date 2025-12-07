@@ -90,10 +90,12 @@ jobs:
               rm -rf "${DEPLOY_PATH}"
             fi
             mkdir -p "$(dirname "${DEPLOY_PATH}")"
+            clone_logs="${DEPLOY_PATH}.clone.log"
+            rm -f "${clone_logs}"
             clone_success=false
             for attempt in $(seq 1 ${MAX_RETRIES}); do
               echo "[deploy] Cloning repository (attempt ${attempt}/${MAX_RETRIES})..."
-              if git clone "${REPO_URL}" "${DEPLOY_PATH}"; then
+              if git clone "${REPO_URL}" "${DEPLOY_PATH}" 2>&1 | tee -a "${clone_logs}"; then
                 clone_success=true
                 break
               fi
@@ -107,7 +109,8 @@ jobs:
               if [[ -d "${DEPLOY_PATH}/.git" ]]; then
                 echo "[deploy] Clone reported failures, but repository directory exists; proceeding anyway."
               else
-                echo "[deploy] Failed to clone repository after ${MAX_RETRIES} attempts."
+                echo "[deploy] Failed to clone repository after ${MAX_RETRIES} attempts. Recent output:"
+                tail -n 50 "${clone_logs}"
                 exit 1
               fi
             fi
