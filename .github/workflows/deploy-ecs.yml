@@ -95,11 +95,6 @@ jobs:
             echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
 
-            echo "[deploy] Updating repository..."
-            retry_cmd "git fetch" git fetch --all --prune
-            git checkout "${BRANCH}"
-            retry_cmd "git pull" git pull origin "${BRANCH}"
-
             echo "[deploy] Ensuring deploy script is executable..."
             chmod +x scripts/deploy.sh
 
