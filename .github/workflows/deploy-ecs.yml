@@ -42,6 +42,7 @@ jobs:
             cat <<'BASH' >/tmp/asb-deploy.sh
             #!/usr/bin/env bash
             set -euo pipefail
+            set -x
 
             DEPLOY_PATH="/opt/asb-platform-infra"
             BRANCH="${BRANCH:-main}"
