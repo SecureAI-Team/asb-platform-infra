@@ -84,36 +84,17 @@ jobs:
             fi
             echo "[deploy] ECS prerequisites OK."
 
-            echo "[deploy] Ensuring repository exists at ${DEPLOY_PATH}"
-            if [[ -d "${DEPLOY_PATH}" ]]; then
-            echo "[deploy] Removing existing contents at ${DEPLOY_PATH}..."
-              rm -rf "${DEPLOY_PATH}"
+            if [[ ! -d "${DEPLOY_PATH}/.git" ]]; then
+              echo "[deploy] ERROR: ${DEPLOY_PATH} is missing or not a git repository."
+              echo "       Please clone https://github.com/SecureAI-Team/asb-platform-infra.git on the ECS host before running CI."
+              exit 1
             fi
-            mkdir -p "$(dirname "${DEPLOY_PATH}")"
-            clone_logs="${DEPLOY_PATH}.clone.log"
-            rm -f "${clone_logs}"
-            clone_success=false
-            for attempt in $(seq 1 ${MAX_RETRIES}); do
-              echo "[deploy] Cloning repository (attempt ${attempt}/${MAX_RETRIES})..."
-              if git clone "${REPO_URL}" "${DEPLOY_PATH}" 2>&1 | tee -a "${clone_logs}"; then
-                clone_success=true
-                break
-              fi
-              if [[ ${attempt} -lt ${MAX_RETRIES} ]]; then
-                echo "[deploy] git clone failed, but will retry in ${RETRY_SLEEP}s..."
-                sleep "${RETRY_SLEEP}"
-              fi
-            done
-
-            if [[ "${clone_success}" != "true" ]]; then
-              if [[ -d "${DEPLOY_PATH}/.git" ]]; then
-                echo "[deploy] Clone reported failures, but repository directory exists; proceeding anyway."
-              else
-                echo "[deploy] Failed to clone repository after ${MAX_RETRIES} attempts. Recent output:"
-                tail -n 50 "${clone_logs}"
-                exit 1
-              fi
-            fi
+            echo "[deploy] Using existing repository at ${DEPLOY_PATH}"
+            cd "${DEPLOY_PATH}"
+            echo "[deploy] Resetting repository to latest ${BRANCH}..."
+            git fetch --all --prune
+            git checkout "${BRANCH}"
+            git reset --hard "origin/${BRANCH}"
 
             echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
