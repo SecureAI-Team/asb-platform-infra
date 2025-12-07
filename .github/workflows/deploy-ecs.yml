@@ -47,21 +47,50 @@ jobs:
             DEPLOY_PATH="/opt/asb-platform-infra"
             BRANCH="${BRANCH:-main}"
             REPO_URL="${REPO_URL:-https://github.com/${{ github.repository }}.git}"
+            MAX_RETRIES=3
+            RETRY_SLEEP=5
 
             echo "[deploy] Ensuring repository exists at ${DEPLOY_PATH}"
             if [[ ! -d "${DEPLOY_PATH}/.git" ]]; then
               echo "[deploy] Repository missing; cloning ${REPO_URL}..."
               mkdir -p "$(dirname "${DEPLOY_PATH}")"
-              git clone "${REPO_URL}" "${DEPLOY_PATH}"
+              attempt=1
+              until git clone "${REPO_URL}" "${DEPLOY_PATH}"; do
+                if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
+                  echo "[deploy] Failed to clone repository after ${MAX_RETRIES} attempts."
+                  exit 1
+                fi
+                attempt=$((attempt + 1))
+                echo "[deploy] Clone failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
+                sleep "${RETRY_SLEEP}"
+              done
             fi
 
             echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
 
             echo "[deploy] Updating repository..."
-            git fetch --all --prune
+            attempt=1
+            until git fetch --all --prune; do
+              if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
+                echo "[deploy] git fetch failed after ${MAX_RETRIES} attempts."
+                exit 1
+              fi
+              attempt=$((attempt + 1))
+              echo "[deploy] git fetch failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
+              sleep "${RETRY_SLEEP}"
+            done
             git checkout "${BRANCH}"
-            git pull origin "${BRANCH}"
+            attempt=1
+            until git pull origin "${BRANCH}"; do
+              if [[ ${attempt} -ge ${MAX_RETRIES} ]]; then
+                echo "[deploy] git pull failed after ${MAX_RETRIES} attempts."
+                exit 1
+              fi
+              attempt=$((attempt + 1))
+              echo "[deploy] git pull failed. Retrying in ${RETRY_SLEEP}s (attempt ${attempt}/${MAX_RETRIES})..."
+              sleep "${RETRY_SLEEP}"
+            done
 
             echo "[deploy] Ensuring deploy script is executable..."
             chmod +x scripts/deploy.sh
