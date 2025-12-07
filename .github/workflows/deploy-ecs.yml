@@ -1,7 +1,6 @@
 # This workflow provides a "one-click" deploy from GitHub Actions.
 # Required repository secrets:
 #   - ECS_HOST / ECS_USER / ECS_PASSWORD: SSH access (password auth) to the ECS instance.
-#   - ECS_DEPLOY_PATH: Absolute path to the asb-platform-infra checkout on ECS.
 #   - ACR_REGISTRY / ACR_USERNAME / ACR_PASSWORD: Aliyun Container Registry creds.
 name: Deploy ASB Platform to Aliyun ECS
 
@@ -24,7 +23,6 @@ jobs:
       ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-      ECS_DEPLOY_PATH: ${{ secrets.ECS_DEPLOY_PATH }}
       BRANCH: ${{ github.event.inputs.branch || 'main' }}
     steps:
       - name: Checkout repository
@@ -39,10 +37,10 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           password: ${{ secrets.ECS_PASSWORD }}
           script_stop: true
-          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ECS_DEPLOY_PATH,BRANCH
+          envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,BRANCH
           script: |
             set -euo pipefail
-            DEPLOY_PATH="${ECS_DEPLOY_PATH:-/opt/asb-platform-infra}"
+            DEPLOY_PATH="/opt/asb-platform-infra"
             BRANCH="${BRANCH:-main}"
 
             echo "[deploy] Using path ${DEPLOY_PATH}"
