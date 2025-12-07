@@ -1,6 +1,6 @@
 # This workflow provides a "one-click" deploy from GitHub Actions.
 # Required repository secrets:
-#   - ECS_HOST / ECS_USER / ECS_SSH_KEY: SSH access to the Aliyun ECS instance.
+#   - ECS_HOST / ECS_USER / ECS_PASSWORD: SSH access (password auth) to the ECS instance.
 #   - ECS_DEPLOY_PATH: Absolute path to the asb-platform-infra checkout on ECS.
 #   - ACR_REGISTRY / ACR_USERNAME / ACR_PASSWORD: Aliyun Container Registry creds.
 name: Deploy ASB Platform to Aliyun ECS
@@ -36,7 +36,7 @@ jobs:
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
-          key: ${{ secrets.ECS_SSH_KEY }}
+          password: ${{ secrets.ECS_PASSWORD }}
           script_stop: true
           envs: ACR_REGISTRY,ACR_USERNAME,ACR_PASSWORD,ECS_DEPLOY_PATH,BRANCH
           script: |
