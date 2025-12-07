@@ -91,10 +91,6 @@ jobs:
             fi
             echo "[deploy] Using existing repository at ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
-            echo "[deploy] Resetting repository to latest ${BRANCH}..."
-            git fetch --all --prune
-            git checkout "${BRANCH}"
-            git reset --hard "origin/${BRANCH}"
 
             echo "[deploy] Using path ${DEPLOY_PATH}"
             cd "${DEPLOY_PATH}"
