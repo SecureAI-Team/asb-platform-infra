@@ -1,5 +1,3 @@
-SET allow_experimental_object_type = 1;
-
 CREATE DATABASE IF NOT EXISTS asb_events;
 
 CREATE TABLE IF NOT EXISTS asb_events.security_events
@@ -13,7 +11,7 @@ CREATE TABLE IF NOT EXISTS asb_events.security_events
     policy String,
     decision String,
     request_id String,
-    metadata Object('json')
+    metadata String  -- store raw JSON payload to avoid experimental types
 )
 ENGINE = MergeTree
 ORDER BY (occurred_at, event_id)
