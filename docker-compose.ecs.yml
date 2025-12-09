@@ -49,17 +49,21 @@ services:
 
   keycloak:
     <<: *env_defaults
-    image: quay.io/keycloak/keycloak:latest
+    image: quay.io/keycloak/keycloak:24.0
     restart: unless-stopped
     command: ["start-dev", "--http-relative-path=/"]
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change_me}
+      KC_HEALTH_ENABLED: "true"
     volumes:
       - keycloak-data:/opt/keycloak/data
       - ./keycloak/realm-asb.json:/opt/keycloak/realms/realm-asb.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:8080/health/ready || exit 1"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3 && grep -q '200' <&3"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,13 +72,13 @@ services:
 
   opa:
     <<: *env_defaults
-    image: openpolicyagent/opa:latest
+    image: openpolicyagent/opa:0.63.0-debug
     restart: unless-stopped
     command: ["run", "--server", "--addr=0.0.0.0:8181", "/policies"]
     volumes:
       - ./opa/policies:/policies:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:8181/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8181/health?plugins || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 8
